@@ -1,23 +1,21 @@
 #include "JPRGBWLib.h"
 
-JPRGBWLib::JPRGBWLib(uint8_t r, uint8_t g, uint8_t b, uint8_t w, uint8_t common_cathode, void (*pinset)(const int, const uint8_t), uint16_t PWMlevels,
-                     uint8_t _default_r,  uint8_t _default_g,  uint8_t _default_b,  uint8_t _default_w) :
-
+JPRGBWLib::JPRGBWLib(uint8_t r, uint8_t g, uint8_t b, uint8_t w, void (*pinset)(const int, const uint8_t), uint16_t PWMlevels,
+                     uint8_t _default_r,  uint8_t _default_g,  uint8_t _default_b,  uint8_t _default_w, uint8_t *_converttable) :
         default_r(_default_r),
         default_g(_default_g),
         default_b(_default_b),
-        default_w(_default_w)
-
+        default_w(_default_w),
+        converttable(_converttable)
 {
         this->r_pin = r;
         this->g_pin = g;
         this->b_pin = b;
         this->w_pin = w;
 
-        this->_common_cathode = common_cathode;
         fading = false;
         PinWrite = pinset;
-        levels = PWMlevels-1;
+        levels = PWMlevels;
         Hue = 0;
         Sat = 0;
         Bri = 0;
@@ -48,20 +46,10 @@ void JPRGBWLib::GetLastColor(uint8_t *r, uint8_t *g, uint8_t *b, uint8_t *w)
 void JPRGBWLib::setColor(uint8_t r, uint8_t g, uint8_t b, uint8_t w)
 {
         // set color of LED
-        if (_common_cathode)
-        {
-                PinWrite(r_pin, r);
-                PinWrite(g_pin, g);
-                PinWrite(b_pin, b);
-                PinWrite(w_pin, w);
-        }
-        else
-        {
-                PinWrite(r_pin, levels - r);
-                PinWrite(g_pin, levels - g);
-                PinWrite(b_pin, levels - b);
-                PinWrite(w_pin, levels - w);
-        }
+        PinWrite(r_pin, r);
+        PinWrite(g_pin, g);
+        PinWrite(b_pin, b);
+        PinWrite(w_pin, w);
 
         // save state
         curr_r = r;
@@ -73,37 +61,64 @@ void JPRGBWLib::setColor(uint8_t r, uint8_t g, uint8_t b, uint8_t w)
 // Fade to custom color in specific time in specific steps
 void JPRGBWLib::fadeTo(uint8_t r, uint8_t g, uint8_t b, uint8_t w, uint16_t steps, unsigned long duration, unsigned long startdelay)
 {
-        if (r != requested_r || g != requested_g || b != requested_b || w != requested_w)
+        if (
+                r != requested_r ||
+                g != requested_g ||
+                b != requested_b ||
+                w != requested_w
+                )
         {
-                fadesteps = steps;
 
                 requested_r = r;
                 requested_g = g;
                 requested_b = b;
                 requested_w = w;
 
-                start_r = curr_r;
-                start_g = curr_g;
-                start_b = curr_b;
-                start_w = curr_w;
+                if (!(
+                            converttable[r] == curr_r &&
+                            converttable[g] == curr_g &&
+                            converttable[b] == curr_b &&
+                            converttable[w] == curr_w
+                            ))
+                {
 
-                // calculate the width of each step
-                step_r = ((int32_t)(r - curr_r) << 8) / steps;
-                step_g = ((int32_t)(g - curr_g) << 8) / steps;
-                step_b = ((int32_t)(b - curr_b) << 8) / steps;
-                step_w = ((int32_t)(w - curr_w) << 8) / steps;
+                        fadesteps = steps;
 
-                lastfadestep = 0;
-                fading = true;
-                fadedelay = duration / steps;
-                fadestarttime = millis() + startdelay;
+                        start_r = curr_r;
+                        start_g = curr_g;
+                        start_b = curr_b;
+                        start_w = curr_w;
+
+                        // calculate the width of each step
+                        step_r = ((int32_t)(converttable[r] - curr_r) << 8) / steps;
+                        step_g = ((int32_t)(converttable[g] - curr_g) << 8) / steps;
+                        step_b = ((int32_t)(converttable[b] - curr_b) << 8) / steps;
+                        step_w = ((int32_t)(converttable[w] - curr_w) << 8) / steps;
+
+                        lastfadestep = 0;
+                        fading = true;
+                        fadedelay = duration / steps;
+                        fadestarttime = millis() + startdelay;
+                        fadelastchecktime = millis();
+                }
+                else
+                        fading = false;
         }
 }
 
 void JPRGBWLib::requestColor(uint8_t r, uint8_t g, uint8_t b, uint8_t w)
 {
         HSBuptodate = false;
-        if (!r && !g && !b && !w)
+        if (
+                !r &&
+                !g &&
+                !b &&
+                !w &&
+                (requested_r ||
+                requested_g ||
+                requested_b ||
+                requested_w)
+                )
         {
                 last_r = requested_r;
                 last_g = requested_g;
@@ -125,7 +140,16 @@ void JPRGBWLib::requestLastColor()
 void JPRGBWLib::fadeToColor(uint8_t r, uint8_t g, uint8_t b, uint8_t w, uint16_t steps, unsigned long duration, unsigned long startdelay)
 {
         HSBuptodate = false;
-        if (!r && !g && !b && !w)
+        if (
+                !r &&
+                !g &&
+                !b &&
+                !w &&
+                (requested_r ||
+                requested_g ||
+                requested_b ||
+                requested_w)
+                )
         {
                 last_r = requested_r;
                 last_g = requested_g;
@@ -178,13 +202,33 @@ void JPRGBWLib::requestBri(uint8_t bri)
 void JPRGBWLib::fadeToHSB(uint16_t hue, uint8_t sat, uint8_t bri, uint16_t steps, unsigned long duration, unsigned long startdelay)
 {
         uint8_t r,g,b,w;
-        if (hue != Hue || Sat != sat || Bri != bri || !HSBuptodate)
+        if (
+                hue != Hue ||
+                Sat != sat ||
+                Bri != bri ||
+                !HSBuptodate)
         {
                 Hue = hue;
                 Sat = sat;
                 Bri = bri;
                 HSBuptodate = true;
                 hsb2rgbw(Hue, Sat, Bri, &r, &g, &b, &w);
+                if (
+                        !r &&
+                        !g &&
+                        !b &&
+                        !w &&
+                        (requested_r ||
+                        requested_g ||
+                        requested_b ||
+                        requested_w)
+                        )
+                {
+                        last_r = requested_r;
+                        last_g = requested_g;
+                        last_b = requested_b;
+                        last_w = requested_w;
+                }
                 fadeTo(r,g,b,w,steps,duration,startdelay);
         }
 }
@@ -264,33 +308,52 @@ void JPRGBWLib::getBri(uint8_t *bri) //based on requesed, i.e. final rgbw, not t
 
 boolean JPRGBWLib::getactivity()
 {
-        return (requested_r || requested_g || requested_b || requested_w || fading);
+        return (
+                requested_r ||
+                requested_g ||
+                requested_b ||
+                requested_w ||
+                fading
+                );
 }
 
 boolean JPRGBWLib::getfading()
 {
         return fading;
 }
-void JPRGBWLib::loop()
+
+void JPRGBWLib::loop(bool enable)
 {
-        if (fading && (signed long)(millis() - fadestarttime) > 0)
+        if (fading)
         {
-                currentfadestep = ((unsigned long)(millis() - fadestarttime)) / fadedelay;
-                if (currentfadestep >= fadesteps)
+                if (enable)
                 {
-                        fading = false;
-                        setColor(requested_r, requested_g, requested_b, requested_w);
+                        fadelastchecktime = millis();
+                        if ((signed long)(millis() - fadestarttime) > 0)
+                        {
+                                currentfadestep = ((unsigned long)(millis() - fadestarttime)) / fadedelay;
+                                if (currentfadestep >= fadesteps)
+                                {
+                                        fading = false;
+                                        setColor(converttable[requested_r], converttable[requested_g], converttable[requested_b], converttable[requested_w]);
+                                }
+                                else if (currentfadestep != lastfadestep)
+                                {
+                                        //set color of current step
+                                        setColor(
+                                                ((((int32_t)(start_r)) << 8) + (currentfadestep * step_r)) >> 8, // red target minus distance to target steps
+                                                ((((int32_t)(start_g)) << 8) + (currentfadestep * step_g)) >> 8, // green
+                                                ((((int32_t)(start_b)) << 8) + (currentfadestep * step_b)) >> 8, // blue
+                                                ((((int32_t)(start_w)) << 8) + (currentfadestep * step_w)) >> 8 // white
+                                                );
+                                        lastfadestep = currentfadestep;
+                                }
+                        }
                 }
-                else if (currentfadestep != lastfadestep)
+                else
                 {
-                        //set color of current step
-                        setColor(
-                                ((((int32_t)(start_r)) << 8) + (currentfadestep * step_r)) >> 8, // red target minus distance to target steps
-                                ((((int32_t)(start_g)) << 8) + (currentfadestep * step_g)) >> 8, // green
-                                ((((int32_t)(start_b)) << 8) + (currentfadestep * step_b)) >> 8, // blue
-                                ((((int32_t)(start_w)) << 8) + (currentfadestep * step_w)) >> 8 // white
-                                );
-                        lastfadestep = currentfadestep;
+                        fadestarttime += (unsigned long)(millis() - fadelastchecktime);
+                        fadelastchecktime = millis();
                 }
         }
 }
@@ -298,7 +361,8 @@ void JPRGBWLib::loop()
 void JPRGBWLib::hsb2rgbw(uint16_t hue, uint8_t sat, uint8_t bri, uint8_t *r, uint8_t *g, uint8_t *b, uint8_t *w)
 {
         uint32_t X, C = (uint32_t)sat * (uint32_t)bri;
-        uint32_t *red, *green, *blue, white = (((uint32_t)bri * 100 - C) * (uint32_t)levels) / 10000;
+        uint32_t *red, *green, *blue;
+        uint32_t white = (((uint32_t)bri * 100 - C) * (uint32_t)levels) / 10000;
         uint32_t Z = 0;
 
         if (hue < 60)
