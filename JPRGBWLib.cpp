@@ -212,7 +212,7 @@ void JPRGBWLib::fadeToHSB(uint16_t hue, uint8_t sat, uint8_t bri, uint16_t steps
                 Sat = sat;
                 Bri = bri;
                 HSBuptodate = true;
-                hsb2rgbw(Hue, Sat, Bri, &r, &g, &b, &w);
+                hsb2rgbw_v2(Hue, Sat, Bri, &r, &g, &b, &w);
                 if (
                         !r &&
                         !g &&
@@ -364,6 +364,75 @@ void JPRGBWLib::hsb2rgbw(uint16_t hue, uint8_t sat, uint8_t bri, uint8_t *r, uin
         uint32_t *red, *green, *blue;
         uint32_t white = (((uint32_t)bri * 100 - C) * (uint32_t)levels) / 10000;
         uint32_t Z = 0;
+
+        if (hue < 60)
+        {
+                red = &C;
+                green = &X;
+                blue = &Z;
+        }
+        else if (hue < 120)
+        {
+                hue = 120 - hue;
+                red = &X;
+                green = &C;
+                blue = &Z;
+        }
+        else if (hue < 180)
+        {
+                hue -= 120;
+                red = &Z;
+                green = &C;
+                blue = &X;
+        }
+        else if (hue < 240)
+        {
+                hue = 240 - hue;
+                red = &Z;
+                green = &X;
+                blue = &C;
+        }
+        else if (hue < 300)
+        {
+                hue -= 240;
+                red = &X;
+                green = &Z;
+                blue = &C;
+        }
+        else
+        {
+                hue = 360 - hue;
+                red = &C;
+                green = &Z;
+                blue = &X;
+        }
+
+        X = (C * hue * levels) / 600000;
+        C = (C * levels) / 10000;
+
+        *r = (uint8_t)(*red);
+        *g = (uint8_t)(*green);
+        *b = (uint8_t)(*blue);
+        *w = (uint8_t)white;
+}
+
+void JPRGBWLib::hsb2rgbw_v2(uint16_t hue, uint8_t sat, uint8_t bri, uint8_t *r, uint8_t *g, uint8_t *b, uint8_t *w)
+{
+        uint32_t X, C;
+        uint32_t *red, *green, *blue;
+        uint32_t white;
+        uint32_t Z = 0;
+        
+        if (sat >= 50)
+        {
+        	C = (uint32_t)100 * (uint32_t)bri;
+			white = (((uint32_t)bri * (200-2*(uint32_t)sat)) * (uint32_t)levels) / 10000;
+		}
+		else
+        {
+        	C = 2 * (uint32_t)sat * (uint32_t)bri;
+			white = (((uint32_t)bri * 100) * (uint32_t)levels) / 10000;
+		}
 
         if (hue < 60)
         {
