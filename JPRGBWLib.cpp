@@ -212,7 +212,7 @@ void JPRGBWLib::fadeToHSB(uint16_t hue, uint8_t sat, uint8_t bri, uint16_t steps
                 Sat = sat;
                 Bri = bri;
                 HSBuptodate = true;
-                hsb2rgbw_v2(Hue, Sat, Bri, &r, &g, &b, &w);
+                hsb2rgbw(Hue, Sat, Bri, &r, &g, &b, &w);
                 if (
                         !r &&
                         !g &&
@@ -422,7 +422,7 @@ void JPRGBWLib::hsb2rgbw_v2(uint16_t hue, uint8_t sat, uint8_t bri, uint8_t *r, 
         uint32_t *red, *green, *blue;
         uint32_t white;
         uint32_t Z = 0;
-        
+
         if (sat >= 50)
         {
         	C = (uint32_t)100 * (uint32_t)bri;
@@ -539,9 +539,15 @@ void JPRGBWLib::rgbw2hsb(uint8_t r, uint8_t g, uint8_t b, uint8_t w, uint16_t *h
                 else
                         *hue = 0;
 
-                *sat = 100 - (w * 100) / (max + w);
-
+                //*sat = 100 - (w * 100) / (max + w);
+                if (w > max)
+                  *sat = (max * 100) / (max + w);
+                else
+                  *sat = 100 - (w * 100) / (max + w);
         }
 
-        *bri = ((max + w) * 100) / levels;
+        if (w > max)
+          *bri = (w * 100) / levels;
+        else
+          *bri = (max * 100) / levels;
 }
